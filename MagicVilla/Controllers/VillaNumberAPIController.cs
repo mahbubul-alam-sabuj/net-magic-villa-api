@@ -44,12 +44,12 @@ public class VillaNumberAPIController : ControllerBase
     return _response;
   }
 
-  [HttpGet("{id}", Name = "GetVillaNumbers")]
+  [HttpGet("{id}", Name = "GetVillaNumber")]
   [ProducesResponseType(StatusCodes.Status200OK)]
   [ProducesResponseType(StatusCodes.Status404NotFound)]
   [ProducesResponseType(StatusCodes.Status400BadRequest)]
   [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-  public async Task<ActionResult<APIResponse>> GetVillaNumbers(int id)
+  public async Task<ActionResult<APIResponse>> GetVillaNumber(int id)
   {
     _logger.LogInformation($"Getting villa number for id = {id}");
     try
@@ -88,12 +88,26 @@ public class VillaNumberAPIController : ControllerBase
         _response.IsSuccess = false;
         return BadRequest(_response);
       }
+
+      VillaNumber? villaWithSameVillaNo = await _dbVillaNumber.GetAsync(filter: (villaNumber) => villaNumber.VillaNo == villaNumberCreateDTO.VillaNo, tracked: false);
+
+      if (villaWithSameVillaNo != null)
+      {
+        _response.StatusCode = HttpStatusCode.BadRequest;
+        _response.IsSuccess = false;
+        _response.ErrorMessages = new List<string> { "Villa with same villa id already exist!" };
+        return BadRequest(_response);
+      }
+
       VillaNumber newVillaNumber = _mapper.Map<VillaNumber>(villaNumberCreateDTO);
+      newVillaNumber.CreatedDate = DateTime.Now;
+
       _response.StatusCode = HttpStatusCode.Created;
-      _response.Result = _mapper.Map<VillaNumberDTO>(newVillaNumber); 
+      _response.Result = _mapper.Map<VillaNumberDTO>(newVillaNumber);
+
       await _dbVillaNumber.CreateAsync(newVillaNumber);
       await _dbVillaNumber.SaveAsync();
-      return CreatedAtRoute(nameof(GetVillaNumbers), new { VillaNumber = newVillaNumber.VillaNo }, _response);
+      return CreatedAtRoute("GetVillaNumber", new { id = newVillaNumber.VillaNo }, _response);
     }
     catch (Exception ex)
     {
@@ -113,16 +127,56 @@ public class VillaNumberAPIController : ControllerBase
     _logger.LogInformation($"Deleting villa number with id = {id}");
     try
     {
-      VillaNumber? villaNumber = await _dbVillaNumber.GetAsync((villaNumber) => villaNumber.VillaNo == id);
+      VillaNumber? villaNumber = await _dbVillaNumber.GetAsync(filter: (villaNumber) => villaNumber.VillaNo == id, tracked: false);
       if (villaNumber == null)
       {
         _response.StatusCode = HttpStatusCode.NotFound;
         _response.IsSuccess = false;
+        _response.ErrorMessages = new List<string> { $"Villa number with VillaNo = {id} Not Found!" };
         return NotFound(_response);
       }
-      _response.StatusCode = HttpStatusCode.NoContent;
+      await _dbVillaNumber.RemoveAsync(villaNumber);
+      _response.StatusCode = HttpStatusCode.OK;
       _response.IsSuccess = true;
       return Ok(_response);
+    }
+    catch (Exception ex)
+    {
+      _response.StatusCode = HttpStatusCode.InternalServerError;
+      _response.IsSuccess = false;
+      _response.ErrorMessages = new List<string> { ex.ToString() };
+    }
+    return _response;
+  }
+
+  [HttpPut("{id}")]
+  public async Task<ActionResult<APIResponse>> UpdateVillaNumber(int id, [FromBody] VillaNumberUpdateDTO villaNumberUpdateDTO)
+  {
+    _logger.LogInformation($"Updating villa with VillaNo = {id}");
+    try
+    {
+      VillaNumber? villaNumber = await _dbVillaNumber.GetAsync(filter: (villaNumber) => villaNumber.VillaNo == id, tracked: false);
+
+      if (villaNumber == null || villaNumberUpdateDTO.VillaNo != id)
+      {
+        _response.StatusCode = HttpStatusCode.BadRequest;
+        _response.IsSuccess = false;
+        if (villaNumber == null)
+        {
+          _response.ErrorMessages = new List<string> { $"Villa with VillaNo = {villaNumberUpdateDTO.VillaNo} Not Found!" };
+        }
+        else 
+        {
+          _response.ErrorMessages = new List<string> { "Provided VillaNo's are not same!" };
+        }
+        return BadRequest(_response);
+      }
+      VillaNumber updatedVillaNumber = _mapper.Map<VillaNumber>(villaNumberUpdateDTO);
+      await _dbVillaNumber.UpdateAsync(updatedVillaNumber);
+      await _dbVillaNumber.SaveAsync();
+      _response.IsSuccess = true;
+      _response.StatusCode = HttpStatusCode.OK;
+      return Ok(_response); 
     }
     catch (Exception ex)
     {
